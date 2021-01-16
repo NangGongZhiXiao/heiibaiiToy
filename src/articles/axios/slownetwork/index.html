@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>axios拦截器</title>
+  <style>
+    body, html  {
+      width: 100%;
+      height: 100%;
+      text-align: center;
+      padding-top: 5%;
+    }
+  </style>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <script>
+    const requestMap = new Set()
+
+    function generateId(url) {
+      return url+new Date().getTime()+Math.random()
+    }
+
+    /**
+     * 慢网络提示拦截器，在网络慢的情况提示用户等待
+     */
+    const slowNetworkInterceptor = function(axios, slowTime = 1) {
+
+      if(!axios.defaults.headers.common.__config){
+        axios.defaults.headers.common.__config = {}
+      }
+
+      axios.defaults.headers.common.__config.slowNetworkConfig = {
+        slowTime, // 定义网络慢的条件
+        close: false,  // 允许在某些接口关闭提示
+      }
+
+      axios.interceptors.request.use(config => {
+        const snc = config.headers.common.__config.slowNetworkConfig
+        if(snc.close) return config
+        const id = generateId(config.url)
+        requestMap.add(id)
+        snc.id = id
+        setTimeout(() => {
+          if(requestMap.has(id)) {
+            console.log("网络似乎正在开小差，请耐心等待噢(ง ˙o˙)ว");
+            requestMap.delete(id)
+          }
+        }, snc.slowTime);
+        return config
+      }, err => Promise.reject(err))
+
+      axios.interceptors.response.use(res => {
+        const snc = res.config.headers.__config.slowNetworkConfig
+        if(snc.close) return res
+        requestMap.delete(snc.id)
+
+        return res
+      }, err => {
+        const snc = err.config.headers.__config.slowNetworkConfig
+        if(snc.close) return Promise.reject(err)
+        requestMap.delete(snc.id)
+        return Promise.reject(err)
+      })
+
+      return axios
+    }
+
+    slowNetworkInterceptor.config = function(slowNetworkConfig, config) {
+      if(typeof config !== "object") config = {}
+      if(!config.headers) config.headers = {}
+      if(!config.headers.common) config.headers.common = {}
+      if(!config.headers.common.__config) config.headers.common.__config = {}
+      if(!config.headers.common.__config.slowNetworkConfig) config.headers.common.__config.slowNetworkConfig = slowNetworkConfig
+      return config
+    }
+
+    slowNetworkInterceptor(axios)
+
+    function handleClick(){
+      console.log("click");
+      axios.get("./data.json")
+    }
+  </script>
+</head>
+<body>
+  <button onclick="handleClick()">用axios发送一个请求</button>
+</body>
+</html>
